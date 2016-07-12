@@ -36,10 +36,15 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ILanguageModel.cs" />
+    <Compile Include="INextWordModel.cs" />
+    <Compile Include="IPrefixLookup.cs" />
+    <Compile Include="ISpellCheck.cs" />
+    <Compile Include="IStringMetric.cs" />
     <Compile Include="IWordSimilarityNode.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SerializationBase.cs" />
-    <Compile Include="Serializer.cs" />
+    <Compile Include="Serialization.cs" />
+    <Compile Include="ISerializer.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

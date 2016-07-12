@@ -2,13 +2,57 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 
 namespace Augury.Base
 {
-    public abstract class SerializationBase
+    public static class Serialization
     {
-        protected static byte[] ReadChunk(Stream stream, string member)
+        private static Type GetSerializer(Type serializerInterface)
+        {
+            var matchedSerializers = AppDomain.CurrentDomain.GetAssemblies().SelectMany(x => x.GetTypes()).Where(t => t.GetInterfaces().Contains(serializerInterface)).ToList();
+            if (matchedSerializers.Count == 0)
+            {
+                throw new Exception("Could not find a serializer implementing: " + serializerInterface.ToString());
+            }
+
+            if (matchedSerializers.Count > 1)
+            {
+                throw new Exception("More than one serializer implements: " + serializerInterface.ToString());
+            }
+
+            return matchedSerializers[0];
+        }
+
+        public static void SerializeInterface<T>(Stream stream, T obj)
+        {
+            var classType = obj.GetType();
+            var genericInterface = typeof(ISerializer<>);
+            var serializerInterface = genericInterface.MakeGenericType(classType);
+            var serializerType = GetSerializer(serializerInterface);
+            var bytes = Serialize(serializerType.AssemblyQualifiedName);
+            stream.Write(bytes, 0, bytes.Length);
+
+            var serializer = Activator.CreateInstance(serializerType);
+            
+            MethodInfo method = serializerType.GetMethod("Serialize");
+            method.Invoke(serializer, new object[] { stream, obj });
+        }
+
+        public static T DeserializeInterface<T>(Stream stream)
+        {
+            var bytes = ReadChunk(stream, "Class name");
+            var className = DeserializeString(bytes, 0, bytes.Length);
+            var classType = Type.GetType(className);            
+            var serializer = Activator.CreateInstance(classType);
+
+            MethodInfo method = classType.GetMethod("Deserialize");
+            var value = method.Invoke(serializer, new object[] { stream });
+            return (T)value;
+        }
+
+        public static byte[] ReadChunk(Stream stream, string member)
         {
             var bytes = new byte[4];
             stream.Read(bytes, 0, 4);
@@ -23,7 +67,7 @@ namespace Augury.Base
             return bytes;
         }
 
-        protected static List<string> DeserializeListString(byte[] bytes)
+        private static List<string> DeserializeListString(byte[] bytes)
         {
             var ret = new List<string>();
             var index = 0;
@@ -39,9 +83,8 @@ namespace Augury.Base
 
             return ret;
         }
-
-
-        protected static Dictionary<int, uint> DeserializeDictionaryIntUint(byte[] bytes, int start, int length)
+        
+        public static Dictionary<int, uint> DeserializeDictionaryIntUint(byte[] bytes, int start, int length)
         {
             var dict = new Dictionary<int, uint>();
             var index = 0;
@@ -58,7 +101,7 @@ namespace Augury.Base
             return dict;
         }
 
-        protected static byte[] Serialize(Dictionary<int, uint> data)
+        public static byte[] Serialize(Dictionary<int, uint> data)
         {
             var bytes = new byte[data.Count * 8];
             var index = 0;
@@ -73,25 +116,25 @@ namespace Augury.Base
             return bytes;
         }
 
-        protected static byte[] Serialize(KeyValuePair<string, int> data)
+        public static byte[] Serialize(KeyValuePair<string, int> data)
         {
             return Concat(Serialize(data.Key), BitConverter.GetBytes(data.Value));
         }
 
         //cheating, this is actually length + 4
-        protected static KeyValuePair<string, int> DeserializeKvpStringint(byte[] bytes, int start, int keyLength)
+        public static KeyValuePair<string, int> DeserializeKvpStringint(byte[] bytes, int start, int keyLength)
         {
             var key = string.Intern(Encoding.UTF8.GetString(bytes, start, keyLength));
             var value = BitConverter.ToInt32(bytes, start + keyLength);
             return new KeyValuePair<string, int>(key, value);
         }
 
-        protected static byte[] Serialize(IEnumerable<string> str)
+        private static byte[] Serialize(IEnumerable<string> str)
         {
             return Concat(str.Select(Serialize));
         }
 
-        protected static string[] DeserializeStringArray(byte[] bytes, int start, int length)
+        private static string[] DeserializeStringArray(byte[] bytes, int start, int length)
         {
             var ret = new List<string>();
             var index = 0;
@@ -106,18 +149,18 @@ namespace Augury.Base
             return ret.ToArray();
         }
 
-        protected static byte[] Serialize(string str)
+        private static byte[] Serialize(string str)
         {
             var bytes = Encoding.UTF8.GetBytes(str);
             return Encapsulate(bytes);
         }
 
-        protected static string DeserializeString(byte[] bytes, int start, int length)
+        private static string DeserializeString(byte[] bytes, int start, int length)
         {
             return string.Intern(Encoding.UTF8.GetString(bytes, start, length));
         }
 
-        protected static byte[] Serialize(IReadOnlyList<int> data)
+        public static byte[] Serialize(IReadOnlyList<int> data)
         {
             var ret = new byte[data.Count * 4];
 
@@ -129,7 +172,7 @@ namespace Augury.Base
             return ret;
         }
 
-        protected static List<int> DeserializeListInt(byte[] bytes, int start, int length)
+        public static List<int> DeserializeListInt(byte[] bytes, int start, int length)
         {
             var results = new List<int>(length / 4);
             for (var x = 0; x < results.Capacity; x++)
@@ -140,7 +183,7 @@ namespace Augury.Base
             return results;
         }
 
-        protected static int[] DeserializeArrayInt(byte[] bytes, int start, int length)
+        public static int[] DeserializeArrayInt(byte[] bytes, int start, int length)
         {
             var results = new int[length / 4];
             for (var x = 0; x < results.Length; x++)
@@ -151,7 +194,7 @@ namespace Augury.Base
             return results;
         }
 
-        protected static byte[] Serialize(IReadOnlyList<ushort> data)
+        public static byte[] Serialize(IReadOnlyList<ushort> data)
         {
             var ret = new byte[data.Count * 2];
 
@@ -163,7 +206,7 @@ namespace Augury.Base
             return ret;
         }
 
-        protected static ushort[] DeserializeArrayUShort(byte[] bytes, int start, int length)
+        public static ushort[] DeserializeArrayUShort(byte[] bytes, int start, int length)
         {
             var results = new ushort[length / 2];
             for (var x = 0; x < results.Length; x++)
@@ -174,7 +217,7 @@ namespace Augury.Base
             return results;
         }
 
-        protected static byte[] Serialize(char[] data)
+        public static byte[] Serialize(char[] data)
         {
             var chars = Encoding.UTF8.GetBytes(data);
             var bytes = new byte[chars.Length + 4];
@@ -183,14 +226,15 @@ namespace Augury.Base
             return bytes;
         }
 
-        protected static char[] DeserializeArrayChar(byte[] bytes, int start, int length)
+        public static char[] DeserializeArrayChar(byte[] bytes, int start, int length)
         {
             var results = new char[Encoding.UTF8.GetCharCount(bytes, start, length)];
             Encoding.UTF8.GetChars(bytes, start, length, results, 0);
             return results;
         }
+
         //Assumes the 2nd dimension is already encapsulated, or does not need to be
-        protected static byte[] Encapsulate(params byte[][] bytes)
+        public static byte[] Encapsulate(params byte[][] bytes)
         {
             var size = bytes.Aggregate(0, (intt, bytee) => intt + bytee.Length);
             var ret = new byte[size + 4];
@@ -205,12 +249,12 @@ namespace Augury.Base
             return ret;
         }
 
-        protected static byte[] Concat(IEnumerable<byte[]> bytes)
+        public static byte[] Concat(IEnumerable<byte[]> bytes)
         {
             return Concat(bytes.ToArray());
         }
 
-        protected static byte[] Concat(params byte[][] bytes)
+        public static byte[] Concat(params byte[][] bytes)
         {
             var size = bytes.Aggregate(0, (intt, bytee) => intt + bytee.Length);
             var ret = new byte[size];
