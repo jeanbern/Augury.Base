@@ -36,6 +36,7 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="StatelessClassSerializationBase.cs" />
     <Compile Include="ILanguageModel.cs" />
     <Compile Include="INextWordModel.cs" />
     <Compile Include="IPrefixLookup.cs" />
