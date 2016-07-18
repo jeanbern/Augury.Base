@@ -2,24 +2,23 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 
 namespace Augury.Base
 {
     public static class Serialization
     {
-        private static Type GetSerializer(Type serializerInterface)
+        public static Type GetSerializer(Type serializerInterface)
         {
             var matchedSerializers = AppDomain.CurrentDomain.GetAssemblies().SelectMany(x => x.GetTypes()).Where(t => t.GetInterfaces().Contains(serializerInterface)).ToList();
             if (matchedSerializers.Count == 0)
             {
-                throw new Exception("Could not find a serializer implementing: " + serializerInterface.ToString());
+                throw new Exception("Could not find a serializer implementing: " + serializerInterface);
             }
 
             if (matchedSerializers.Count > 1)
             {
-                throw new Exception("More than one serializer implements: " + serializerInterface.ToString());
+                throw new Exception("More than one serializer implements: " + serializerInterface);
             }
 
             return matchedSerializers[0];
@@ -36,7 +35,7 @@ namespace Augury.Base
 
             var serializer = Activator.CreateInstance(serializerType);
             
-            MethodInfo method = serializerType.GetMethod("Serialize");
+            var method = serializerType.GetMethod("Serialize");
             method.Invoke(serializer, new object[] { stream, obj });
         }
 
@@ -44,10 +43,15 @@ namespace Augury.Base
         {
             var bytes = ReadChunk(stream, "Class name");
             var className = DeserializeString(bytes, 0, bytes.Length);
-            var classType = Type.GetType(className);            
+            var classType = Type.GetType(className);
+            if (classType == null)
+            {
+                throw new TypeAccessException($"Failed to find a type matching name: {className}");
+            }
+
             var serializer = Activator.CreateInstance(classType);
 
-            MethodInfo method = classType.GetMethod("Deserialize");
+            var method = classType.GetMethod("Deserialize");
             var value = method.Invoke(serializer, new object[] { stream });
             return (T)value;
         }
@@ -65,23 +69,6 @@ namespace Augury.Base
             }
 
             return bytes;
-        }
-
-        private static List<string> DeserializeListString(byte[] bytes)
-        {
-            var ret = new List<string>();
-            var index = 0;
-            var maxLen = bytes.Length;
-            while (index < maxLen)
-            {
-                var nextLength = BitConverter.ToInt32(bytes, index);
-                index += 4;
-                var next = DeserializeString(bytes, index, nextLength);
-                ret.Add(next);
-                index += nextLength;
-            }
-
-            return ret;
         }
         
         public static Dictionary<int, uint> DeserializeDictionaryIntUint(byte[] bytes, int start, int length)
@@ -127,26 +114,6 @@ namespace Augury.Base
             var key = string.Intern(Encoding.UTF8.GetString(bytes, start, keyLength));
             var value = BitConverter.ToInt32(bytes, start + keyLength);
             return new KeyValuePair<string, int>(key, value);
-        }
-
-        private static byte[] Serialize(IEnumerable<string> str)
-        {
-            return Concat(str.Select(Serialize));
-        }
-
-        private static string[] DeserializeStringArray(byte[] bytes, int start, int length)
-        {
-            var ret = new List<string>();
-            var index = 0;
-            while (index < length)
-            {
-                var nextLength = BitConverter.ToInt32(bytes, start + index);
-                index += 4;
-                ret.Add(string.Intern(Encoding.UTF8.GetString(bytes, start + index, nextLength)));
-                index += nextLength;
-            }
-
-            return ret.ToArray();
         }
 
         private static byte[] Serialize(string str)

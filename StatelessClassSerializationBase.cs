@@ -12,7 +12,6 @@ namespace Augury.Base
 
         public void Serialize(Stream stream, T data)
         {
-            return;
         }
     }
 }
